@@ -1,221 +1,207 @@
-/*
- * ESP32 Sensor Monitoring Tanaman Melon
- * 
- * Hardware:
- *   - DHT22 (GPIO 4) — Suhu & Kelembapan
- *   - Soil Moisture (GPIO 32) — Kelembapan Tanah
- *   - Relay (GPIO 26) — Pompa Air
- *   - Button (GPIO 0) — Reset WiFi
- * 
- * Library:
- *   - Firebase ESP Client (Mobizt)
- *   - DHT sensor library (Adafruit)
- *   - Adafruit Unified Sensor
- */
-
 #include <WiFi.h>
 #include <Firebase_ESP_Client.h>
-#include <DHT.h>
 #include <addons/TokenHelper.h>
 #include <addons/RTDBHelper.h>
+#include <DHT.h>
+#include <time.h>
 
-// ===================== KONFIGURASI =====================
+// ── KONFIGURASI WiFi ──
 #define WIFI_SSID     "NAMA_WIFI"
 #define WIFI_PASSWORD "PASSWORD_WIFI"
 
-#define API_KEY       "FIREBASE_API_KEY"
-#define DATABASE_URL  "https://PROJECT_ID-default-rtdb.firebaseio.com"
+// ── KONFIGURASI FIREBASE ──
+#define FIREBASE_HOST "PROJECT_ID-default-rtdb.firebaseio.com"
+#define FIREBASE_AUTH "FIREBASE_API_KEY"
 
-// ===================== PIN =====================
-#define DHT_PIN       4
-#define DHT_TYPE      DHT22
-#define SOIL_PIN      32
-#define RELAY_PIN     26
-#define BUTTON_PIN    0
+// ── PIN PERANGKAT ──
+#define DHT_PIN   4
+#define DHT_TYPE  DHT22
+#define SOIL_PIN  32
+#define RELAY_PIN 26
 
-// ===================== KALIBRASI SOIL =====================
-#define SOIL_DRY      4095
-#define SOIL_WET      0
+// ── KALIBRASI SOIL MOISTURE ──
+#define SOIL_DRY 4095
+#define SOIL_WET 0
 
-// ===================== INTERVAL =====================
-#define INTERVAL_BACA    3000    // Baca sensor tiap 3 detik
-#define INTERVAL_HISTORY 300000  // Simpan history tiap 5 menit
+// ── INTERVAL ──
+#define INTERVAL_SENSOR  3000      // Update latest setiap 3 detik
+#define INTERVAL_HISTORY 300000    // Simpan riwayat setiap 5 menit
+
+// ══════════════════════════════════════════════════════
+// KALIBRASI DHT22
+// Rumus: OFFSET = Nilai Referensi (HTC-1) - Nilai DHT22
+// Suhu  : 27.0 - 28.6 = -1.6
+// Hum   : 84.0 - 93.5 = -9.5
+// Jika hasil masih belum akurat, sesuaikan nilai ini
+// ══════════════════════════════════════════════════════
+#define OFFSET_SUHU       -1.6
+#define OFFSET_KELEMBAPAN -9.5
 
 DHT dht(DHT_PIN, DHT_TYPE);
 FirebaseData fbdo;
+FirebaseData fbdoStream;
 FirebaseAuth auth;
 FirebaseConfig config;
 
-bool pompaNyala      = false;
-int  manualOverride  = -1;  // -1=auto, 0=paksa OFF, 1=paksa ON
-unsigned long lastRead    = 0;
+bool pompaNyala     = false;
+int  manualOverride = -1; // -1: Auto | 0: OFF paksa | 1: ON paksa
+
+unsigned long lastSensor  = 0;
 unsigned long lastHistory = 0;
 
-// ===================== NTP =====================
-void syncNTP() {
-  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov");
-  Serial.print("Sync NTP");
-  struct tm ti;
-  unsigned long s = millis();
-  while (true) {
-    if (millis() - s > 20000) { Serial.println(" timeout"); return; }
-    if (getLocalTime(&ti) && ti.tm_year > 120) break;
-    delay(500); Serial.print(".");
-  }
-  char buf[25];
-  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &ti);
-  Serial.println(" OK: " + String(buf));
-}
-
-String getTimestamp() {
-  struct tm ti;
-  if (!getLocalTime(&ti) || ti.tm_year < 120) return "n/a";
-  char buf[25];
-  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &ti);
-  return String(buf);
-}
-
-// ===================== RESET WiFi =====================
-void resetWiFi() {
-  Serial.println("Reset WiFi credentials...");
-  WiFi.disconnect(true, true);
-  delay(1000);
-  ESP.restart();
-}
-
-// ===================== FIREBASE STREAM =====================
+// ── Stream Callback ──
 void streamCallback(FirebaseStream data) {
-  Serial.printf("Stream: %s -> %s\n",
-    data.dataPath().c_str(), data.stringData().c_str());
-  if (data.dataPath() == "/") {
-    int val = data.intData();
-    if (val >= -1 && val <= 1) manualOverride = val;
+  if (data.dataType() == "int") {
+    manualOverride = data.intData();
+    Serial.printf("Kontrol Dashboard: %s\n",
+      manualOverride == 1 ? "ON MANUAL" :
+      manualOverride == 0 ? "OFF MANUAL" : "MODE OTOMATIS");
   }
 }
 
 void streamTimeoutCallback(bool timeout) {
-  if (timeout) Serial.println("Stream timeout, reconnecting...");
+  if (timeout) Serial.println("Stream timeout, retrying...");
 }
 
-// ===================== SETUP =====================
+// ── Fungsi Timestamp ──
+String getTimestamp() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) return "n/a";
+  char buf[25];
+  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+  return String(buf);
+}
+
+// ======================================================
+// SETUP
+// ======================================================
 void setup() {
   Serial.begin(115200);
-  delay(1000);
-  Serial.println("\nESP32 Sensor Booting...");
-
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, HIGH);  // Relay OFF (active low)
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-
   dht.begin();
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, HIGH); // Relay OFF saat start (Active Low)
 
-  // WiFi
-  WiFi.mode(WIFI_STA);
+  // Koneksi WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("WiFi connecting");
-  unsigned long ws = millis();
+  Serial.print("Connecting WiFi");
   while (WiFi.status() != WL_CONNECTED) {
-    if (millis() - ws > 20000) { WiFi.begin(WIFI_SSID, WIFI_PASSWORD); ws = millis(); }
     delay(500); Serial.print(".");
   }
-  Serial.println("\nWiFi: " + WiFi.localIP().toString());
+  Serial.println("\nTerhubung ke WiFi: " + WiFi.localIP().toString());
 
-  syncNTP();
-
-  // Firebase
-  config.api_key = API_KEY;
-  config.database_url = DATABASE_URL;
-  auth.user.email = "esp32@monitoring.local";
-  auth.user.password = "esp32pass123";
-  config.token_status_callback = tokenStatusCallback;
+  // Konfigurasi Firebase
+  config.database_url               = FIREBASE_HOST;
+  config.signer.tokens.legacy_token = FIREBASE_AUTH;
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
 
-  // Stream listener untuk kontrol pompa
-  if (!Firebase.RTDB.beginStream(&fbdo, "/relay"))
-    Serial.printf("Stream error: %s\n", fbdo.errorReason().c_str());
-  Firebase.RTDB.setStreamCallback(&fbdo, streamCallback, streamTimeoutCallback);
+  // Stream relay (kontrol manual dari web)
+  if (!Firebase.RTDB.beginStream(&fbdoStream, "/relay")) {
+    Serial.println("Stream error: " + fbdoStream.errorReason());
+  }
+  Firebase.RTDB.setStreamCallback(&fbdoStream, streamCallback, streamTimeoutCallback);
 
-  Serial.println("Firebase connected");
-  Serial.println("========================================");
+  // Sync NTP WIB (UTC+7)
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov", "id.pool.ntp.org");
+  Serial.print("Sinkronisasi NTP");
+  struct tm timeinfo;
+  int retry = 0;
+  while (!getLocalTime(&timeinfo) && retry < 20) {
+    delay(500); Serial.print("."); retry++;
+  }
+  if (getLocalTime(&timeinfo)) {
+    Serial.println("\nNTP OK: " + getTimestamp());
+  } else {
+    Serial.println("\nNTP GAGAL - waktu akan tampil n/a");
+  }
+
+  // Tampilkan info kalibrasi
+  Serial.println("==============================");
+  Serial.printf("Kalibrasi Suhu       : %+.1f C\n", OFFSET_SUHU);
+  Serial.printf("Kalibrasi Kelembapan : %+.1f %%\n", OFFSET_KELEMBAPAN);
+  Serial.println("==============================");
 }
 
-// ===================== LOOP =====================
+// ======================================================
+// LOOP UTAMA
+// ======================================================
 void loop() {
-  // Tombol reset WiFi (tahan 3 detik)
-  if (digitalRead(BUTTON_PIN) == LOW) {
-    delay(3000);
-    if (digitalRead(BUTTON_PIN) == LOW) resetWiFi();
-  }
-
-  // Reconnect WiFi
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi putus, reconnecting...");
-    WiFi.reconnect();
-    unsigned long rs = millis();
-    while (WiFi.status() != WL_CONNECTED) {
-      if (millis() - rs > 15000) ESP.restart();
-      delay(500);
-    }
-    syncNTP();
-  }
-
   unsigned long now = millis();
-  if (now - lastRead < INTERVAL_BACA) return;
-  lastRead = now;
 
-  // 1. Baca Sensor
-  float t = dht.readTemperature();
-  float h = dht.readHumidity();
-  int   rawSoil = analogRead(SOIL_PIN);
-  int   soil    = map(rawSoil, SOIL_DRY, SOIL_WET, 0, 100);
-  soil = constrain(soil, 0, 100);
+  if (now - lastSensor >= INTERVAL_SENSOR) {
+    lastSensor = now;
 
-  if (isnan(t) || isnan(h)) {
-    Serial.println("DHT error!");
-    return;
-  }
+    // 1. Baca Sensor RAW
+    float tRaw  = dht.readTemperature();
+    float hRaw  = dht.readHumidity();
+    int soilRaw = analogRead(SOIL_PIN);
+    int soil    = constrain(map(soilRaw, SOIL_DRY, SOIL_WET, 0, 100), 0, 100);
 
-  // 2. Logika Pompa
-  if (manualOverride == 1)       pompaNyala = true;
-  else if (manualOverride == 0)  pompaNyala = false;
-  else {
-    if (soil < 40)       pompaNyala = true;
-    else if (soil >= 60)  pompaNyala = false;
-  }
+    if (isnan(tRaw) || isnan(hRaw)) {
+      Serial.println("DHT22 tidak terbaca!"); return;
+    }
 
-  // 3. Eksekusi Relay
-  digitalWrite(RELAY_PIN, pompaNyala ? LOW : HIGH);
+    // 2. Terapkan Kalibrasi
+    float t = constrain(tRaw + OFFSET_SUHU,       -40.0, 80.0);
+    float h = constrain(hRaw + OFFSET_KELEMBAPAN,   0.0, 100.0);
 
-  // 4. Timestamp
-  String ts = getTimestamp();
+    // 3. Logika Pompa
+    if (manualOverride == 1) {
+      pompaNyala = true;   // Paksa ON dari web
+    }
+    else if (manualOverride == 0) {
+      pompaNyala = false;  // Paksa OFF dari web
+    }
+    else {
+      // MODE OTOMATIS
+      // Nyalakan pompa jika soil < 40% (KERING)
+      // Matikan pompa jika soil >= 60% (BASAH)
+      // Antara 40-59% -> pertahankan status pompa sebelumnya
+      if (soil < 40)       pompaNyala = true;
+      else if (soil >= 60) pompaNyala = false;
+    }
 
-  // 5. Serial Monitor
-  Serial.printf("T:%.1fC | H:%.1f%% | Soil:%d%% | Pompa:%s | %s\n",
-    t, h, soil, pompaNyala ? "ON" : "OFF", ts.c_str());
+    // 4. Eksekusi Relay
+    digitalWrite(RELAY_PIN, pompaNyala ? LOW : HIGH);
 
-  // 6. Kirim ke Firebase
-  if (Firebase.ready()) {
-    // Latest (tiap 3 detik)
-    FirebaseJson jsonL;
-    jsonL.set("suhu", t);
-    jsonL.set("kelembapan", h);
-    jsonL.set("soil", soil);
-    jsonL.set("pompa", pompaNyala ? "ON" : "OFF");
-    jsonL.set("updated_at", ts);
-    Firebase.RTDB.setJSON(&fbdo, "/sensor/latest", &jsonL);
+    // 5. Timestamp
+    String ts = getTimestamp();
 
-    // History (tiap 5 menit)
-    if (now - lastHistory >= INTERVAL_HISTORY) {
-      lastHistory = now;
-      FirebaseJson jsonH;
-      jsonH.set("suhu", t);
-      jsonH.set("kelembapan", h);
-      jsonH.set("soil", soil);
-      jsonH.set("pompa", pompaNyala ? "ON" : "OFF");
-      jsonH.set("created_at", ts);
-      Firebase.RTDB.pushJSON(&fbdo, "/sensor/history", &jsonH);
-      Serial.println("History saved");
+    // 6. Serial Monitor - tampilkan RAW dan hasil kalibrasi
+    Serial.printf("RAW  -> T:%.1fC | H:%.1f%%\n", tRaw, hRaw);
+    Serial.printf("KALI -> T:%.1fC | H:%.1f%% | Soil:%d%% | Pompa:%s | Mode:%s | %s\n",
+      t, h, soil,
+      pompaNyala ? "ON" : "OFF",
+      manualOverride == -1 ? "AUTO" : "MANUAL",
+      ts.c_str());
+
+    // 7. Kirim ke Firebase (nilai sudah terkalibrasi)
+    if (Firebase.ready()) {
+
+      // ── LATEST: update setiap 3 detik ──
+      FirebaseJson jsonLatest;
+      jsonLatest.set("suhu",       t);    // terkalibrasi
+      jsonLatest.set("kelembapan", h);    // terkalibrasi
+      jsonLatest.set("soil",       soil);
+      jsonLatest.set("pompa",      pompaNyala ? "ON" : "OFF");
+      jsonLatest.set("updated_at", ts);
+      Firebase.RTDB.setJSON(&fbdo, "/sensor/latest", &jsonLatest);
+
+      // ── HISTORY: simpan setiap 5 menit ──
+      if (now - lastHistory >= INTERVAL_HISTORY) {
+        lastHistory = now;
+
+        FirebaseJson jsonHistory;
+        jsonHistory.set("suhu",       t);    // terkalibrasi
+        jsonHistory.set("kelembapan", h);    // terkalibrasi
+        jsonHistory.set("soil",       soil);
+        jsonHistory.set("pompa",      pompaNyala ? "ON" : "OFF");
+        jsonHistory.set("updated_at", ts);
+        jsonHistory.set("created_at", ts);
+
+        Firebase.RTDB.pushJSON(&fbdo, "/sensor/history", &jsonHistory);
+        Serial.println("Riwayat tersimpan! Waktu: " + ts);
+      }
     }
   }
 }
