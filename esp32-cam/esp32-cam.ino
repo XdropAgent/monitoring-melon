@@ -172,6 +172,7 @@ static esp_err_t stream_handler(httpd_req_t* req) {
     if (res == ESP_OK)
       res = httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len);
     esp_camera_fb_return(fb);
+    delay(50);  // kurangi frame rate
     if (res != ESP_OK) break;
   }
   return res;
@@ -345,6 +346,7 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
   if (!WiFi.config(local_IP, gateway, subnet, dns))
     Serial.println("Static IP gagal");
 
@@ -380,11 +382,11 @@ void setup() {
   config.pin_sccb_scl  = SIOC_GPIO_NUM;
   config.pin_pwdn      = PWDN_GPIO_NUM;
   config.pin_reset     = RESET_GPIO_NUM;
-  config.xclk_freq_hz  = 20000000;
+  config.xclk_freq_hz  = 10000000;  // lebih stabil
   config.pixel_format  = PIXFORMAT_JPEG;
   config.frame_size    = FRAMESIZE_QVGA;
-  config.jpeg_quality  = 10;
-  config.fb_count      = 3;
+  config.jpeg_quality  = 20;  // lebih ringan
+  config.fb_count      = 2;  // kurangi beban PSRAM
   config.fb_location   = CAMERA_FB_IN_PSRAM;
   config.grab_mode     = CAMERA_GRAB_LATEST;
 
