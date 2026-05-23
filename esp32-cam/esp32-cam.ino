@@ -8,9 +8,18 @@
  *   - Foto terjadwal (12:00, 16:00, 20:00)
  *   - Watermark timestamp di foto
  *   - Upload base64 ke Firebase RTDB
+ *   - Auto-retry on failure
  * 
  * Board: AI Thinker ESP32-CAM
  * Partition: Huge APP (3MB No OTA/1MB SPIFFS)
+ * 
+ * FIX:
+ *   - Watermark quality: 15 → 25 (lebih jelas)
+ *   - Memory: chunked upload, free base64 segera
+ *   - Font: extend range ke 126 (lowercase → uppercase)
+ *   - Stream: pause/resume saat upload
+ *   - Retry: max 3x on upload failure
+ *   - Warmup: 3x frame buat stabilize exposure
  */
 
 #include "esp_camera.h"
@@ -32,7 +41,6 @@ const int JADWAL_JAM[] = {12, 16, 20};
 const int TOTAL_JADWAL = 3;
 
 // ===================== STATIC IP =====================
-// Sesuaikan dengan jaringan WiFi kamu
 IPAddress local_IP(192, 168, 1, 100);
 IPAddress gateway(192, 168, 1, 1);
 IPAddress subnet(255, 255, 255, 0);
@@ -68,6 +76,7 @@ bool sudahFotoHariIni[3]    = {false, false, false};
 int hariTerakhir             = -1;
 
 // ===================== FONT BITMAP 5x7 =====================
+// Range: 32-126 (space to ~), lowercase → uppercase
 static const uint8_t font5x7[][5] = {
   {0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x5F,0x00,0x00},{0x00,0x07,0x00,0x07,0x00},
   {0x14,0x7F,0x14,0x7F,0x14},{0x24,0x2A,0x7F,0x2A,0x12},{0x23,0x13,0x08,0x64,0x62},
@@ -88,14 +97,33 @@ static const uint8_t font5x7[][5] = {
   {0x7F,0x09,0x09,0x09,0x06},{0x3E,0x41,0x51,0x21,0x5E},{0x7F,0x09,0x19,0x29,0x46},
   {0x46,0x49,0x49,0x49,0x31},{0x01,0x01,0x7F,0x01,0x01},{0x3F,0x40,0x40,0x40,0x3F},
   {0x1F,0x20,0x40,0x20,0x1F},{0x3F,0x40,0x38,0x40,0x3F},{0x63,0x14,0x08,0x14,0x63},
-  {0x07,0x08,0x70,0x08,0x07},{0x61,0x51,0x49,0x45,0x43}
+  {0x07,0x08,0x70,0x08,0x07},{0x61,0x51,0x49,0x45,0x43},
+  // 91-96: [ \ ] ^ _ `
+  {0x00,0x41,0x41,0x41,0x00},{0x20,0x10,0x08,0x04,0x02},{0x00,0x41,0x41,0x41,0x00},
+  {0x04,0x02,0x01,0x02,0x04},{0x08,0x08,0x08,0x08,0x08},{0x00,0x01,0x02,0x04,0x00},
+  // 97-122: a-z → same as A-Z (duplicate for lowercase)
+  {0x7E,0x11,0x11,0x11,0x7E},{0x7F,0x49,0x49,0x49,0x36},{0x3E,0x41,0x41,0x41,0x22},
+  {0x7F,0x41,0x41,0x22,0x1C},{0x7F,0x49,0x49,0x49,0x41},{0x7F,0x09,0x09,0x09,0x01},
+  {0x3E,0x41,0x49,0x49,0x7A},{0x7F,0x08,0x08,0x08,0x7F},{0x00,0x41,0x7F,0x41,0x00},
+  {0x20,0x40,0x41,0x3F,0x01},{0x7F,0x08,0x14,0x22,0x41},{0x7F,0x40,0x40,0x40,0x40},
+  {0x7F,0x02,0x0C,0x02,0x7F},{0x7F,0x04,0x08,0x10,0x7F},{0x3E,0x41,0x41,0x41,0x3E},
+  {0x7F,0x09,0x09,0x09,0x06},{0x3E,0x41,0x51,0x21,0x5E},{0x7F,0x09,0x19,0x29,0x46},
+  {0x46,0x49,0x49,0x49,0x31},{0x01,0x01,0x7F,0x01,0x01},{0x3F,0x40,0x40,0x40,0x3F},
+  {0x1F,0x20,0x40,0x20,0x1F},{0x3F,0x40,0x38,0x40,0x3F},{0x63,0x14,0x08,0x14,0x63},
+  {0x07,0x08,0x70,0x08,0x07},{0x61,0x51,0x49,0x45,0x43},
+  // 123-126: { | } ~
+  {0x00,0x08,0x36,0x41,0x00},{0x00,0x00,0x7F,0x00,0x00},{0x00,0x41,0x36,0x08,0x00},
+  {0x08,0x04,0x08,0x10,0x08}
 };
 
 // ===================== DRAW TEXT =====================
 void drawChar(uint8_t* buf, int bw, int bh, int x, int y, char c, uint16_t color) {
   if (!buf) return;
-  if (c < 32 || c > 90) c = ' ';
+  // Convert lowercase to uppercase
+  if (c >= 'a' && c <= 'z') c -= 32;
+  if (c < 32 || c > 126) c = ' ';
   int idx = c - 32;
+  if (idx < 0 || idx >= 95) return;
   for (int col = 0; col < 5; col++) {
     uint8_t bits = font5x7[idx][col];
     for (int row = 0; row < 7; row++) {
@@ -114,9 +142,7 @@ void drawChar(uint8_t* buf, int bw, int bh, int x, int y, char c, uint16_t color
 void drawString(uint8_t* buf, int bw, int bh, int x, int y, const char* str, uint16_t color) {
   if (!buf || !str) return;
   while (*str) {
-    char c = *str++;
-    if (c >= 'a' && c <= 'z') c -= 32;
-    drawChar(buf, bw, bh, x, y, c, color);
+    drawChar(buf, bw, bh, x, y, *str++, color);
     x += 6;
   }
 }
@@ -124,32 +150,53 @@ void drawString(uint8_t* buf, int bw, int bh, int x, int y, const char* str, uin
 // ===================== FOTO DENGAN WATERMARK =====================
 camera_fb_t* ambilFotoDenganWatermark(const char* waktuStr) {
   sensor_t* s = esp_camera_sensor_get();
-  if (!s) return NULL;
+  if (!s) { Serial.println("Sensor null"); return NULL; }
+
+  // Switch to RGB565 for watermark
   s->set_pixformat(s, PIXFORMAT_RGB565);
-  delay(150);
+  delay(200);
+
   camera_fb_t* fb = esp_camera_fb_get();
   if (!fb || !fb->buf) {
-    Serial.println("Gagal RGB565");
+    Serial.println("Gagal capture RGB565");
     s->set_pixformat(s, PIXFORMAT_JPEG);
+    delay(100);
     return NULL;
   }
-  int w = fb->width, h = fb->height;
-  drawString(fb->buf, w, h, 3, h - 11, waktuStr, 0x0000);
-  drawString(fb->buf, w, h, 2, h - 12, waktuStr, 0xFFFF);
 
+  int w = fb->width, h = fb->height;
+
+  // Draw watermark: shadow (black) + text (white)
+  drawString(fb->buf, w, h, 3, h - 11, waktuStr, 0x0000);  // shadow
+  drawString(fb->buf, w, h, 2, h - 12, waktuStr, 0xFFFF);  // text
+
+  // Convert to JPEG with better quality
   uint8_t* jpg_buf = NULL;
   size_t jpg_len = 0;
-  bool ok = frame2jpg(fb, 15, &jpg_buf, &jpg_len);
+  bool ok = frame2jpg(fb, 25, &jpg_buf, &jpg_len);  // quality 25 (was 15)
   esp_camera_fb_return(fb);
-  s->set_pixformat(s, PIXFORMAT_JPEG);
-  delay(150);
-  if (!ok || !jpg_buf) { if(jpg_buf) free(jpg_buf); return NULL; }
 
-  static camera_fb_t fake_fb;
-  fake_fb.buf = jpg_buf; fake_fb.len = jpg_len;
-  fake_fb.width = w; fake_fb.height = h;
-  fake_fb.format = PIXFORMAT_JPEG;
-  return &fake_fb;
+  // Switch back to JPEG for stream
+  s->set_pixformat(s, PIXFORMAT_JPEG);
+  delay(100);
+
+  if (!ok || !jpg_buf || jpg_len < 500) {
+    Serial.printf("JPEG convert gagal: ok=%d len=%d\n", ok, jpg_len);
+    if (jpg_buf) free(jpg_buf);
+    return NULL;
+  }
+
+  Serial.printf("Watermark foto: %d bytes (%dx%d)\n", jpg_len, w, h);
+
+  // Allocate on heap (not static) to avoid overwrite issues
+  camera_fb_t* result = (camera_fb_t*)malloc(sizeof(camera_fb_t));
+  if (!result) { free(jpg_buf); return NULL; }
+  result->buf = jpg_buf;
+  result->len = jpg_len;
+  result->width = w;
+  result->height = h;
+  result->format = PIXFORMAT_JPEG;
+  return result;
 }
 
 // ===================== STREAM HANDLER =====================
@@ -161,6 +208,7 @@ static esp_err_t stream_handler(httpd_req_t* req) {
   res = httpd_resp_set_type(req, STREAM_CONTENT_TYPE);
   if (res != ESP_OK) return res;
   while (true) {
+    // Pause stream during upload
     while (isUploading) delay(100);
     fb = esp_camera_fb_get();
     if (!fb) { res = ESP_FAIL; break; }
@@ -172,7 +220,7 @@ static esp_err_t stream_handler(httpd_req_t* req) {
     if (res == ESP_OK)
       res = httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len);
     esp_camera_fb_return(fb);
-    delay(50);  // kurangi frame rate
+    delay(50);
     if (res != ESP_OK) break;
   }
   return res;
@@ -256,62 +304,126 @@ String base64Encode(uint8_t* data, size_t len) {
   return result;
 }
 
-// ===================== UPLOAD KE FIREBASE =====================
-void uploadToFirebase() {
+// ===================== UPLOAD KE FIREBASE (CHUNKED) =====================
+bool uploadToFirebase() {
   struct tm ti;
   if (!getLocalTime(&ti) || ti.tm_year < 120) {
     syncNTP();
-    if (!getLocalTime(&ti) || ti.tm_year < 120) return;
+    if (!getLocalTime(&ti) || ti.tm_year < 120) {
+      Serial.println("NTP gagal, skip upload");
+      return false;
+    }
   }
 
-  Serial.println("\nAmbil foto...");
+  Serial.println("\n=== Ambil foto ===");
   isUploading = true;
-  camera_fb_t* warmup = esp_camera_fb_get();
-  if (warmup) esp_camera_fb_return(warmup);
-  delay(200);
+
+  // Warmup: 3x frame untuk stabilize exposure & white balance
+  for (int i = 0; i < 3; i++) {
+    camera_fb_t* warmup = esp_camera_fb_get();
+    if (warmup) esp_camera_fb_return(warmup);
+    delay(100);
+  }
 
   String waktu = getTimeString();
   char waktuChar[25];
   waktu.toCharArray(waktuChar, 25);
   camera_fb_t* fb = ambilFotoDenganWatermark(waktuChar);
-  if (!fb || !fb->buf) { isUploading = false; return; }
-  if (fb->len < 500) { free(fb->buf); isUploading = false; return; }
 
-  Serial.printf("Foto: %d bytes\n", fb->len);
+  if (!fb || !fb->buf) {
+    Serial.println("Foto gagal!");
+    isUploading = false;
+    return false;
+  }
+
+  Serial.printf("Foto OK: %d bytes\n", fb->len);
+
+  // Encode base64
   String b64 = base64Encode(fb->buf, fb->len);
   free(fb->buf);
-  isUploading = false;
+  free(fb);
+  fb = NULL;
 
+  Serial.printf("Base64: %d chars\n", b64.length());
+
+  // Build JSON
   unsigned long ts = getUnixTimestamp() * 1000UL;
-  String body = "{\"image\":\"" + b64 + "\",\"timestamp\":" + String(ts) + ",\"waktu\":\"" + waktu + "\"}";
-
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(15);
-  if (!client.connect(FIREBASE_HOST, 443)) { Serial.println("Gagal konek Firebase"); return; }
-
   String path = "/foto.json?auth=" + String(FIREBASE_AUTH);
-  client.print("POST "); client.print(path); client.println(" HTTP/1.1");
-  client.print("Host: "); client.println(FIREBASE_HOST);
-  client.println("Content-Type: application/json");
-  client.print("Content-Length: "); client.println(body.length());
-  client.println("Connection: close");
-  client.println();
+  String header = "POST " + path + " HTTP/1.1\r\n"
+                  "Host: " + String(FIREBASE_HOST) + "\r\n"
+                  "Content-Type: application/json\r\n"
+                  "Connection: close\r\n\r\n";
+  String bodyPrefix = "{\"image\":\"";
+  String bodySuffix = "\",\"timestamp\":" + String(ts) + ",\"waktu\":\"" + waktu + "\"}";
 
-  int sent = 0;
-  while (sent < (int)body.length()) {
-    int end = min(sent + 512, (int)body.length());
-    client.print(body.substring(sent, end));
-    sent = end;
+  int totalLen = header.length() + bodyPrefix.length() + b64.length() + bodySuffix.length();
+  Serial.printf("Upload size: %d bytes\n", totalLen);
+
+  // Upload with retry
+  for (int attempt = 1; attempt <= 3; attempt++) {
+    Serial.printf("Upload attempt %d/3...\n", attempt);
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(20);
+
+    if (!client.connect(FIREBASE_HOST, 443)) {
+      Serial.println("Gagal konek Firebase");
+      delay(2000);
+      continue;
+    }
+
+    // Send header
+    client.print(header);
+
+    // Send body prefix
+    client.print(bodyPrefix);
+
+    // Send base64 in chunks (avoid memory doubling)
+    int sent = 0;
+    while (sent < (int)b64.length()) {
+      int end = min(sent + 512, (int)b64.length());
+      client.print(b64.substring(sent, end));
+      sent = end;
+    }
+
+    // Send body suffix
+    client.print(bodySuffix);
+
+    // Wait for response
+    unsigned long timeout = millis();
+    while (client.available() == 0) {
+      if (millis() - timeout > 20000) {
+        Serial.println("Response timeout");
+        client.stop();
+        delay(2000);
+        goto retry;
+      }
+      delay(10);
+    }
+
+    String response = client.readStringUntil('\n');
+    client.stop();
+    Serial.println("Response: " + response);
+
+    if (response.indexOf("200") >= 0 || response.indexOf("201") >= 0) {
+      Serial.println("Upload OK!");
+      isUploading = false;
+      b64 = ""; // free memory
+      return true;
+    }
+
+    Serial.println("Upload gagal: " + response);
+    delay(2000);
+
+    retry:
+    continue;
   }
 
-  unsigned long timeout = millis();
-  while (client.available() == 0) {
-    if (millis() - timeout > 15000) { client.stop(); return; }
-    delay(10);
-  }
-  Serial.println("Upload: " + client.readStringUntil('\n'));
-  client.stop();
+  Serial.println("Upload FAILED after 3 attempts");
+  isUploading = false;
+  b64 = "";
+  return false;
 }
 
 // ===================== CEK JADWAL =====================
@@ -320,15 +432,25 @@ void cekJadwalFoto() {
   if (!getLocalTime(&ti) || ti.tm_year < 120) return;
   int jam = ti.tm_hour;
   int hari = ti.tm_yday;
+
+  // Reset flag on new day
   if (hari != hariTerakhir) {
     for (int i = 0; i < TOTAL_JADWAL; i++) sudahFotoHariIni[i] = false;
     hariTerakhir = hari;
   }
+
+  // Check schedule
   for (int i = 0; i < TOTAL_JADWAL; i++) {
     if (jam == JADWAL_JAM[i] && !sudahFotoHariIni[i]) {
-      Serial.printf("Jadwal %02d:00\n", JADWAL_JAM[i]);
-      uploadToFirebase();
-      sudahFotoHariIni[i] = true;
+      Serial.printf("\n>>> Jadwal %02d:00 — ambil foto!\n", JADWAL_JAM[i]);
+      bool ok = uploadToFirebase();
+      if (ok) {
+        sudahFotoHariIni[i] = true;
+        Serial.printf("Foto %02d:00 tersimpan!\n", JADWAL_JAM[i]);
+      } else {
+        Serial.printf("Foto %02d:00 GAGAL — akan retry menit depan\n", JADWAL_JAM[i]);
+        // Don't set flag — will retry next minute
+      }
       break;
     }
   }
@@ -342,7 +464,7 @@ void setup() {
   Serial.println("\nESP32-CAM Booting...");
 
   if (psramInit()) Serial.println("PSRAM OK");
-  else Serial.println("PSRAM TIDAK AKTIF");
+  else Serial.println("PSRAM TIDAK AKTIF — watermark mungkin gagal!");
 
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
@@ -382,41 +504,53 @@ void setup() {
   config.pin_sccb_scl  = SIOC_GPIO_NUM;
   config.pin_pwdn      = PWDN_GPIO_NUM;
   config.pin_reset     = RESET_GPIO_NUM;
-  config.xclk_freq_hz  = 10000000;  // lebih stabil
+  config.xclk_freq_hz  = 10000000;  // 10MHz — lebih stabil
   config.pixel_format  = PIXFORMAT_JPEG;
-  config.frame_size    = FRAMESIZE_QVGA;
-  config.jpeg_quality  = 20;  // lebih ringan
-  config.fb_count      = 2;  // kurangi beban PSRAM
+  config.frame_size    = FRAMESIZE_QVGA;  // 320x240
+  config.jpeg_quality  = 15;
+  config.fb_count      = 2;
   config.fb_location   = CAMERA_FB_IN_PSRAM;
   config.grab_mode     = CAMERA_GRAB_LATEST;
 
   if (esp_camera_init(&config) != ESP_OK) {
-    Serial.println("Kamera gagal!");
-    delay(3000); ESP.restart();
+    Serial.println("Kamera gagal! Restart...");
+    delay(3000);
+    ESP.restart();
   }
   Serial.println("Kamera OK");
 
   syncNTP();
   startCameraServer();
-  Serial.println("Stream: http://" + WiFi.localIP().toString());
+  Serial.println("Ready! Stream: http://" + WiFi.localIP().toString());
+  Serial.printf("Jadwal foto: ");
+  for (int i = 0; i < TOTAL_JADWAL; i++) Serial.printf("%02d:00 ", JADWAL_JAM[i]);
+  Serial.println();
 }
 
 // ===================== LOOP =====================
 void loop() {
+  // Reconnect WiFi if lost
   if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi terputus, reconnect...");
     WiFi.reconnect();
     unsigned long rs = millis();
     while (WiFi.status() != WL_CONNECTED) {
-      if (millis() - rs > 15000) ESP.restart();
+      if (millis() - rs > 15000) {
+        Serial.println("WiFi gagal, restart...");
+        ESP.restart();
+      }
       delay(500);
     }
+    Serial.println("WiFi reconnected: " + WiFi.localIP().toString());
     syncNTP();
   }
 
+  // Cek jadwal foto setiap 60 detik
   static unsigned long lastCek = 0;
   if (millis() - lastCek >= 60000) {
     lastCek = millis();
     cekJadwalFoto();
   }
+
   delay(1000);
 }
