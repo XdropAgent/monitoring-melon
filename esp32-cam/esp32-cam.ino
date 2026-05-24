@@ -397,7 +397,7 @@ bool uploadToFirebase() {
         Serial.println("Response timeout");
         client.stop();
         delay(2000);
-        goto retry;
+        break;
       }
       delay(10);
     }
@@ -416,8 +416,6 @@ bool uploadToFirebase() {
     Serial.println("Upload gagal: " + response);
     delay(2000);
 
-    retry:
-    continue;
   }
 
   Serial.println("Upload FAILED after 3 attempts");
