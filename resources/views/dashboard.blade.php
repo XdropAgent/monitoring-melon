@@ -467,8 +467,9 @@
 <!-- ===== SCRIPT UTAMA ===== -->
 <script>
   // ===================== KONFIGURASI =====================
-  // Stream di port 80, capture di port 81
-  const ESP32_STREAM  = 'http://10.18.186.172';
+  // Stream via VPS proxy (multi-device support)
+  const ESP32_STREAM  = 'http://YOUR_VPS_IP:8080/stream?token=melon-cam-2024';
+  // Capture masih lokal (ESP32:81) — hanya di jaringan lokal
   const ESP32_CAPTURE = 'http://10.18.186.172:81/capture';
 
   // ===================== CLOCK =====================
