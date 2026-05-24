@@ -468,7 +468,7 @@
 <script>
   // ===================== KONFIGURASI =====================
   // Stream via VPS proxy (multi-device support)
-  const ESP32_STREAM = 'http://43.134.230.63:8080/stream?token=melon-cam-2024';
+  const ESP32_STREAM = 'http://43.134.230.63/stream?token=melon-cam-2024';
 
   // ===================== CLOCK =====================
   function tick() { document.getElementById('clock').textContent = new Date().toLocaleTimeString('id-ID'); }
