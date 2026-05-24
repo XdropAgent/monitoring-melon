@@ -588,33 +588,6 @@
     }
   });
 
-  // ===================== AMBIL FOTO MANUAL =====================
-  // Set Firebase flag → ESP32 baca flag → capture + watermark + upload
-  window.ambilFotoManual = async function() {
-    const btn = document.getElementById('btn-capture');
-    btn.disabled = true;
-    btn.textContent = '⏳ Menunggu ESP32...';
-    showToast('📷 Mengirim perintah ke ESP32...');
-
-    try {
-      // Set flag di Firebase
-      await set(ref(db, '/capture'), true);
-      showToast('✅ Perintah terkirim! ESP32 akan ambil foto dalam beberapa detik...', 5000);
-      
-      // Tunggu foto baru muncul (listener /foto akan update otomatis)
-      setTimeout(() => {
-        btn.disabled = false;
-        btn.textContent = '📸 Ambil Foto';
-      }, 15000); // Wait 15s for ESP32 to capture + upload
-      
-    } catch (err) {
-      console.error('Capture error:', err);
-      showToast('❌ Gagal: ' + err.message, 4000);
-      btn.disabled = false;
-      btn.textContent = '📸 Ambil Foto';
-    }
-  };
-
   // ===================== MODAL VIEWER FOTO =====================
   window.allFotoSrc = [];
   window.bukaModalFoto = function(idx) {
@@ -713,6 +686,29 @@
       console.log('✅ Pompa set ke:', label);
     } catch (e) {
       alert('❌ Gagal kirim perintah pompa: ' + e.message);
+    }
+  };
+
+  // ===================== AMBIL FOTO MANUAL =====================
+  window.ambilFotoManual = async function() {
+    const btn = document.getElementById('btn-capture');
+    btn.disabled = true;
+    btn.textContent = '⏳ Menunggu ESP32...';
+    showToast('📷 Mengirim perintah ke ESP32...');
+
+    try {
+      await set(ref(db, '/capture'), true);
+      showToast('✅ Perintah terkirim! ESP32 akan ambil foto dalam beberapa detik...', 5000);
+
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = '📸 Ambil Foto';
+      }, 15000);
+    } catch (err) {
+      console.error('Capture error:', err);
+      showToast('❌ Gagal: ' + err.message, 4000);
+      btn.disabled = false;
+      btn.textContent = '📸 Ambil Foto';
     }
   };
 
