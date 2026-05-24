@@ -41,10 +41,10 @@ const int JADWAL_JAM[] = {12, 16, 20};
 const int TOTAL_JADWAL = 3;
 
 // ===================== STATIC IP =====================
-IPAddress local_IP(192, 168, 1, 100);
-IPAddress gateway(192, 168, 1, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress dns(1, 1, 1, 1);
+//IPAddress local_IP(192, 168, 1, 100);
+//IPAddress gateway(192, 168, 1, 1);
+//IPAddress subnet(255, 255, 255, 0);
+//IPAddress dns(1, 1, 1, 1);
 
 // ===================== PIN KAMERA (AI Thinker) =====================
 #define PWDN_GPIO_NUM     32
@@ -467,8 +467,6 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
   WiFi.setTxPower(WIFI_POWER_19_5dBm);
-  if (!WiFi.config(local_IP, gateway, subnet, dns))
-    Serial.println("Static IP gagal");
 
   WiFi.begin(ssid, password);
   Serial.print("WiFi");
