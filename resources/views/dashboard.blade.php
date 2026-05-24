@@ -650,7 +650,7 @@
   import { getDatabase, ref, onValue, remove, set, push } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-database.js";
 
   const app = initializeApp({
-    apiKey:      "AIzaSyCmIIEjajnv7m95T4gMoUUMCwFcf2qwClw",
+    apiKey:      "YOUR_FIREBASE_API_KEY",
     databaseURL: "https://monitoring-tanaman-d2cd2-default-rtdb.firebaseio.com",
     projectId:   "monitoring-tanaman-d2cd2",
   });
