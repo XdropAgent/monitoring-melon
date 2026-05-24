@@ -382,7 +382,7 @@ bool uploadToFirebase() {
     // Send base64 in chunks (avoid memory doubling)
     int sent = 0;
     while (sent < (int)b64.length()) {
-      int end = min(sent + 512, (int)b64.length());
+      int end = min(sent + 256, (int)b64.length());
       client.print(b64.substring(sent, end));
       sent = end;
     }
@@ -393,7 +393,7 @@ bool uploadToFirebase() {
     // Wait for response
     unsigned long timeout = millis();
     while (client.available() == 0) {
-      if (millis() - timeout > 20000) {
+      if (millis() - timeout > 60000) {
         Serial.println("Response timeout");
         client.stop();
         delay(2000);
