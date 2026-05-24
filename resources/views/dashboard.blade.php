@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>Dashboard Monitoring</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍈</text></svg>">
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -45,7 +44,7 @@
 
     .container { max-width: 1100px; margin: 18px auto; padding: 0 16px; display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
     .card { background: var(--card); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; }
-    .card-header { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; background: var(--green-pale); }
+    .card-header { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; background: var(--green-pale); display: flex; align-items: center; gap: 6px; }
 
     .main-image-wrap { position: relative; background: #111; aspect-ratio: 16/9; max-height: 340px; overflow: hidden; width: 100%; }
     .main-image-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: .95; }
@@ -59,6 +58,17 @@
     .img-meta { font-family: 'Space Mono', monospace; font-size: 10px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.5); line-height: 1.8; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     .img-meta .val { color: var(--green-light); font-weight: 700; }
     .stream-status { position: absolute; top: 8px; right: 10px; font-size: 10px; font-family: 'Space Mono', monospace; color: #fff; background: rgba(0,0,0,0.55); padding: 2px 8px; border-radius: 4px; z-index: 5; }
+
+    /* Tombol ambil foto di atas live camera */
+    .btn-capture {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--green-mid); color: #fff;
+      border: none; border-radius: 6px; padding: 5px 12px;
+      font-size: 11px; font-weight: 600; cursor: pointer;
+      font-family: 'DM Sans', sans-serif; transition: background .2s;
+    }
+    .btn-capture:hover { background: var(--green-dark); }
+    .btn-capture:disabled { background: #9ca3af; cursor: not-allowed; }
 
     .timelapse-strip { display: flex; gap: 8px; padding: 12px 14px; overflow-x: auto; min-height: 90px; align-items: center; }
     .timelapse-strip::-webkit-scrollbar { height: 4px; }
@@ -89,50 +99,24 @@
     .badge-danger { background: #fee2e2; color: #dc2626; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700; }
     .badge-info   { background: #dbeafe; color: #1d4ed8; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700; }
 
-    /* ===== POMPA CONTROL CARD (REDESAIN) ===== */
     .pompa-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
     .pompa-status-row { display: flex; align-items: center; justify-content: space-between; }
     .pompa-status-left { display: flex; align-items: center; gap: 8px; }
-    .pompa-dot {
-      width: 10px; height: 10px; border-radius: 50%;
-      background: #22c55e;
-      box-shadow: 0 0 0 3px rgba(34,197,94,0.15);
-      transition: all 0.3s;
-      flex-shrink: 0;
-    }
+    .pompa-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,0.15); transition: all 0.3s; flex-shrink: 0; }
     .pompa-dot.off { background: #9ca3af; box-shadow: none; }
     .pompa-status-text { font-size: 14px; font-weight: 600; color: var(--text); }
-    .pompa-mode-badge {
-      font-size: 11px; font-weight: 600; padding: 3px 10px;
-      border-radius: 20px; transition: all 0.2s;
-    }
-    .pompa-mode-badge.auto {
-      background: #fef9c3; color: #92400e; border: 0.5px solid #fde68a;
-    }
-    .pompa-mode-badge.on {
-      background: #dcfce7; color: #14532d; border: 0.5px solid #86efac;
-    }
-    .pompa-mode-badge.off {
-      background: #f3f4f6; color: #4b5563; border: 0.5px solid #d1d5db;
-    }
+    .pompa-mode-badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; transition: all 0.2s; }
+    .pompa-mode-badge.auto { background: #fef9c3; color: #92400e; border: 0.5px solid #fde68a; }
+    .pompa-mode-badge.on   { background: #dcfce7; color: #14532d; border: 0.5px solid #86efac; }
+    .pompa-mode-badge.off  { background: #f3f4f6; color: #4b5563; border: 0.5px solid #d1d5db; }
     .pompa-btn-group { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
-    .pompa-btn {
-      display: flex; flex-direction: column; align-items: center; gap: 5px;
-      padding: 11px 6px; border-radius: 8px; border: 1px solid var(--border);
-      background: #fff; cursor: pointer; transition: all 0.15s;
-      font-size: 11px; font-weight: 600; color: var(--muted);
-      font-family: 'DM Sans', sans-serif;
-    }
+    .pompa-btn { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 11px 6px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; transition: all 0.15s; font-size: 11px; font-weight: 600; color: var(--muted); font-family: 'DM Sans', sans-serif; }
     .pompa-btn i { font-size: 18px; }
     .pompa-btn:hover { background: var(--green-pale); border-color: var(--green-light); color: var(--green-dark); }
     .pompa-btn.active-auto { border: 1.5px solid #f59e0b; background: #fef9c3; color: #92400e; }
     .pompa-btn.active-on   { border: 1.5px solid #16a34a; background: #dcfce7; color: #14532d; }
     .pompa-btn.active-off  { border: 1.5px solid #9ca3af; background: #f3f4f6; color: #374151; }
-    .pompa-info {
-      font-size: 11px; color: var(--muted); text-align: center;
-      line-height: 1.5; padding: 8px 10px;
-      background: var(--green-pale); border-radius: 6px;
-    }
+    .pompa-info { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.5; padding: 8px 10px; background: var(--green-pale); border-radius: 6px; }
 
     .riwayat-wrap { max-width: 1100px; margin: 18px auto; padding: 0 16px; }
     .riwayat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
@@ -175,6 +159,16 @@
     #modal-foto-viewer .close-btn { position: absolute; top: 10px; right: 12px; background: rgba(255,255,255,0.15); border: none; color: #fff; font-size: 18px; cursor: pointer; border-radius: 50%; width: 30px; height: 30px; line-height: 30px; text-align: center; }
     #modal-foto-viewer .foto-waktu { color: rgba(255,255,255,0.7); font-family: 'Space Mono', monospace; font-size: 11px; margin: 0; }
     #modal-foto-viewer .btn-download { background: var(--green-mid); color: #fff; padding: 6px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; }
+
+    /* Toast notifikasi */
+    #toast {
+      position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+      background: #1a2e1e; color: #fff; padding: 10px 18px;
+      border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
 
     @media (max-width: 900px) { .container { grid-template-columns: 1fr; } }
     @media (max-width: 768px) {
@@ -234,6 +228,9 @@
   </div>
 </div>
 
+<!-- Toast -->
+<div id="toast"></div>
+
 <!-- ===== NAV ===== -->
 <nav>
   <div class="brand"><span>Monitoring</span>&nbsp;Melon</div>
@@ -268,7 +265,13 @@
   <div class="container">
     <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
       <div class="card">
-        <div class="card-header">📹 Live Camera — MELON01</div>
+        {{-- Header dengan tombol ambil foto --}}
+        <div class="card-header" style="justify-content:space-between;">
+          <span>📹 Live Camera — MELON01</span>
+          <button class="btn-capture" id="btn-capture" onclick="ambilFotoManual()">
+            📸 Ambil Foto
+          </button>
+        </div>
         <div class="main-image-wrap">
           <img id="mainImg" alt="Live Stream" style="width:100%;height:100%;object-fit:cover;display:block;">
           <div class="offline-overlay" id="offline-overlay">
@@ -299,16 +302,12 @@
     </div>
 
     <div class="right-col">
-
-      <!-- ===== CARD KONTROL POMPA (REDESAIN) ===== -->
       <div class="card">
-        <div class="card-header" style="display:flex;align-items:center;gap:6px;">
+        <div class="card-header">
           <i class="ti ti-droplet" style="font-size:14px;color:#1d4ed8;"></i>
           Kontrol Pompa
         </div>
         <div class="pompa-body">
-
-          <!-- Status baris -->
           <div class="pompa-status-row">
             <div class="pompa-status-left">
               <div class="pompa-dot" id="pompa-dot"></div>
@@ -316,32 +315,23 @@
             </div>
             <div class="pompa-mode-badge auto" id="pompa-mode-badge">Otomatis</div>
           </div>
-
-          <!-- Tombol mode -->
           <div class="pompa-btn-group">
             <button class="pompa-btn active-auto" id="btn-auto" onclick="setPompa(-1)">
-              <i class="ti ti-refresh"></i>
-              Auto
+              <i class="ti ti-refresh"></i>Auto
             </button>
             <button class="pompa-btn" id="btn-on" onclick="setPompa(1)">
-              <i class="ti ti-player-play"></i>
-              Nyala
+              <i class="ti ti-player-play"></i>Nyala
             </button>
             <button class="pompa-btn" id="btn-off" onclick="setPompa(0)">
-              <i class="ti ti-player-stop"></i>
-              Mati
+              <i class="ti ti-player-stop"></i>Mati
             </button>
           </div>
-
-          <!-- Info -->
           <div class="pompa-info" id="pompa-info-text">
             Pompa dikontrol otomatis oleh sensor soil moisture
           </div>
-
         </div>
       </div>
 
-      <!-- ===== CARD SENSOR STATUS ===== -->
       <div class="card">
         <div class="card-header">🌡 Sensor Status</div>
         <div class="gauges-row">
@@ -476,14 +466,28 @@
 
 <!-- ===== SCRIPT UTAMA ===== -->
 <script>
-  const ESP32_IP = '{{ config('services.esp32_cam_ip') }}';
+  // ===================== KONFIGURASI =====================
+  // Stream di port 80, capture di port 81
+  const ESP32_STREAM  = 'http://10.18.186.172';
+  const ESP32_CAPTURE = 'http://10.18.186.172:81/capture';
 
+  // ===================== CLOCK =====================
   function tick() { document.getElementById('clock').textContent = new Date().toLocaleTimeString('id-ID'); }
   tick(); setInterval(tick, 1000);
 
+  // ===================== MODAL =====================
   function openModal(id)  { document.getElementById(id).classList.add('show'); }
   function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 
+  // ===================== TOAST =====================
+  function showToast(msg, durasi = 3000) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), durasi);
+  }
+
+  // ===================== TAB =====================
   function switchTab(btn, tab) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -491,11 +495,13 @@
     btn.classList.add('active');
   }
 
+  // ===================== LIVE STREAM =====================
   function setMain(src) {
     const img = document.getElementById('mainImg');
     img.classList.remove('hidden');
     document.getElementById('offline-overlay').classList.remove('show');
     img.src = src;
+    // Kembali ke stream setelah 10 detik
     setTimeout(() => startStream(), 10000);
   }
 
@@ -529,13 +535,19 @@
   function startStream() {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     setStreamState('connecting');
-    mainImg.src = ESP32_IP + '/?' + Date.now();
+    mainImg.src = ESP32_STREAM + '/?' + Date.now();
   }
-  mainImg.onload  = function() { setStreamState('live'); if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } };
-  mainImg.onerror = function() { setStreamState('offline'); reconnectTimer = setTimeout(startStream, 5000); };
+  mainImg.onload  = function() {
+    setStreamState('live');
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  };
+  mainImg.onerror = function() {
+    setStreamState('offline');
+    reconnectTimer = setTimeout(startStream, 5000);
+  };
   startStream();
 
-  // ===== BADGE HELPERS =====
+  // ===================== BADGE HELPERS =====================
   function getBadgeSuhu(val) {
     val = parseFloat(val);
     if (isNaN(val)) return '<span class="badge-warn">-</span>';
@@ -558,7 +570,7 @@
     return           '<span class="badge-info">BASAH</span>';
   }
 
-  // Mini chart
+  // ===================== MINI CHART =====================
   const timeseries = @json($timeseries);
   new Chart(document.getElementById('miniChart').getContext('2d'), {
     type: 'line',
@@ -570,10 +582,86 @@
         { label:'Soil Moisture', data: timeseries.map(t=>t.soil),       borderColor:'#2563eb', backgroundColor:'rgba(37,99,235,.08)',   tension:0.4, pointRadius:0, fill:true },
       ]
     },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ display:false }, y:{ grid:{ color:'#e8f5ec' }, ticks:{ font:{ size:9 }, color:'#6b7c6e' } } } }
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { display: false }, y: { grid: { color:'#e8f5ec' }, ticks: { font: { size:9 }, color:'#6b7c6e' } } }
+    }
   });
 
-  // ===== MODAL VIEWER FOTO =====
+  // ===================== AMBIL FOTO MANUAL =====================
+  // Fetch JPEG dari ESP32 port 81, tambahkan watermark via Canvas, simpan ke Firebase
+  window.ambilFotoManual = async function() {
+    const btn = document.getElementById('btn-capture');
+    btn.disabled = true;
+    btn.textContent = '⏳ Mengambil...';
+    showToast('📷 Mengambil foto dari kamera...');
+
+    try {
+      // 1. Fetch JPEG dari endpoint /capture (port 81)
+      const response = await fetch(ESP32_CAPTURE + '?' + Date.now(), {
+        method: 'GET',
+        cache: 'no-store'
+      });
+
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+
+      const blob = await response.blob();
+      if (blob.size < 1000) throw new Error('Foto terlalu kecil (' + blob.size + ' bytes), kemungkinan corrupt');
+
+      // 2. Load ke Image untuk canvas
+      const imgEl = new Image();
+      const blobUrl = URL.createObjectURL(blob);
+
+      await new Promise((resolve, reject) => {
+        imgEl.onload = resolve;
+        imgEl.onerror = () => reject(new Error('Gagal load gambar'));
+        imgEl.src = blobUrl;
+      });
+
+      // 3. Gambar ke canvas + tambahkan watermark timestamp
+      const canvas  = document.createElement('canvas');
+      canvas.width  = imgEl.naturalWidth;
+      canvas.height = imgEl.naturalHeight;
+      const ctx = canvas.getContext('2d');
+
+      ctx.drawImage(imgEl, 0, 0);
+      URL.revokeObjectURL(blobUrl);
+
+      // Watermark: background semi-transparan di bawah
+      const waktu = new Date().toLocaleString('id-ID', {
+        day:'2-digit', month:'2-digit', year:'numeric',
+        hour:'2-digit', minute:'2-digit', second:'2-digit'
+      });
+      const textY = canvas.height - 8;
+      ctx.font      = 'bold 11px monospace';
+      const textW   = ctx.measureText(waktu).width;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(4, textY - 13, textW + 8, 17);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(waktu, 8, textY);
+
+      // 4. Export canvas ke base64 JPEG
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const b64     = dataUrl.split(',')[1];
+
+      if (!b64 || b64.length < 1000) throw new Error('Base64 hasil canvas tidak valid');
+
+      // 5. Simpan ke Firebase (dilakukan di bagian module di bawah)
+      const ts = Date.now();
+      window._pendingFoto = { image: b64, timestamp: ts, waktu: waktu };
+      document.dispatchEvent(new CustomEvent('simpanFoto'));
+
+    } catch (err) {
+      console.error('Capture error:', err);
+      showToast('❌ Gagal: ' + err.message, 4000);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📸 Ambil Foto';
+    }
+  };
+
+  // ===================== MODAL VIEWER FOTO =====================
   window.allFotoSrc = [];
   window.bukaModalFoto = function(idx) {
     const item = window.allFotoSrc[idx];
@@ -595,7 +683,7 @@
     a.click();
   };
 
-  // ===== UPDATE UI TOMBOL POMPA (REDESAIN) =====
+  // ===================== POMPA UI =====================
   function updatePompaUI(mode, pompaStatus) {
     const dot       = document.getElementById('pompa-dot');
     const statusTxt = document.getElementById('pompa-status-text');
@@ -604,11 +692,9 @@
     const btnAuto   = document.getElementById('btn-auto');
     const btnOn     = document.getElementById('btn-on');
     const btnOff    = document.getElementById('btn-off');
-
     btnAuto.className = 'pompa-btn';
     btnOn.className   = 'pompa-btn';
     btnOff.className  = 'pompa-btn';
-
     if (mode === -1) {
       btnAuto.className = 'pompa-btn active-auto';
       badge.className   = 'pompa-mode-badge auto';
@@ -625,32 +711,47 @@
       badge.textContent = 'Manual OFF';
       infoTxt.textContent = '⚠️ Pompa dipaksa mati dari dashboard';
     }
-
     const nyala = (pompaStatus === 'ON') || (mode === 1);
-    if (nyala) {
-      dot.className     = 'pompa-dot';
-      statusTxt.textContent = 'Menyala';
-    } else {
-      dot.className     = 'pompa-dot off';
-      statusTxt.textContent = 'Mati';
-    }
+    dot.className       = nyala ? 'pompa-dot' : 'pompa-dot off';
+    statusTxt.textContent = nyala ? 'Menyala' : 'Mati';
   }
 </script>
 
 <!-- ===== FIREBASE ===== -->
 <script type="module">
   import { initializeApp }                          from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-  import { getDatabase, ref, onValue, remove, set } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-database.js";
+  import { getDatabase, ref, onValue, remove, set, push } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-database.js";
 
   const app = initializeApp({
-    apiKey:      "{{ config('services.firebase.api_key') }}",
-    databaseURL: "{{ config('services.firebase.database_url') }}",
-    projectId:   "{{ config('services.firebase.project_id') }}",
+    apiKey:      "AIzaSyCmIIEjajnv7m95T4gMoUUMCwFcf2qwClw",
+    databaseURL: "https://monitoring-tanaman-d2cd2-default-rtdb.firebaseio.com",
+    projectId:   "monitoring-tanaman-d2cd2",
   });
   const db      = getDatabase(app);
   const circumf = 201;
 
-  // ===== KONTROL POMPA =====
+  // ===================== SIMPAN FOTO KE FIREBASE =====================
+  // Dipanggil dari event 'simpanFoto' yang di-dispatch setelah canvas selesai
+  document.addEventListener('simpanFoto', async () => {
+    const pending = window._pendingFoto;
+    if (!pending) return;
+    window._pendingFoto = null;
+
+    try {
+      showToast('☁️ Menyimpan foto ke Firebase...');
+      await push(ref(db, '/foto'), {
+        image:     pending.image,
+        timestamp: pending.timestamp,
+        waktu:     pending.waktu
+      });
+      showToast('✅ Foto berhasil disimpan!', 3000);
+    } catch (err) {
+      console.error('Firebase save error:', err);
+      showToast('❌ Gagal simpan: ' + err.message, 4000);
+    }
+  });
+
+  // ===================== KONTROL POMPA =====================
   window.setPompa = async function(mode) {
     try {
       await set(ref(db, '/relay'), mode);
@@ -661,7 +762,7 @@
     }
   };
 
-  // ===== LISTENER /relay =====
+  // ===================== LISTENER /relay =====================
   onValue(ref(db, '/relay'), (snapshot) => {
     const mode = snapshot.val() ?? -1;
     onValue(ref(db, '/sensor/latest'), (snap) => {
@@ -671,7 +772,7 @@
     }, { onlyOnce: true });
   });
 
-  // ===== RIWAYAT FOTO =====
+  // ===================== RIWAYAT FOTO =====================
   onValue(ref(db, '/foto'), (snapshot) => {
     const data       = snapshot.val();
     const grid       = document.getElementById('foto-grid');
@@ -690,6 +791,7 @@
     countBadge.textContent = fotos.length + ' foto';
     window.allFotoSrc = [];
 
+    // Timelapse strip
     let stripHtml = '';
     fotos.forEach((foto, i) => {
       const ts    = foto.timestamp < 1e10 ? foto.timestamp * 1000 : foto.timestamp;
@@ -707,6 +809,7 @@
     });
     document.getElementById('timelapse-strip').innerHTML = stripHtml;
 
+    // Grid foto
     let gridHtml = '';
     fotos.forEach((foto, i) => {
       const ts    = foto.timestamp < 1e10 ? foto.timestamp * 1000 : foto.timestamp;
@@ -722,7 +825,7 @@
     grid.innerHTML = gridHtml;
   });
 
-  // ===== SENSOR LATEST =====
+  // ===================== SENSOR LATEST =====================
   onValue(ref(db, '/sensor/latest'), (snapshot) => {
     const data = snapshot.val();
     if (!data) return;
@@ -739,11 +842,11 @@
     document.getElementById('val-kelembapan').textContent     = kelembapan + ' %';
     document.getElementById('val-soil').textContent           = soil + ' %';
 
-    document.getElementById('gauge-suhu-circle').setAttribute('stroke-dashoffset', Math.round(circumf * (1 - Math.min(suhu, 100) / 100)));
+    document.getElementById('gauge-suhu-circle').setAttribute('stroke-dashoffset',  Math.round(circumf * (1 - Math.min(suhu, 100) / 100)));
     document.getElementById('gauge-suhu-text').textContent  = suhu + '°';
-    document.getElementById('gauge-hum-circle').setAttribute('stroke-dashoffset',  Math.round(circumf * (1 - Math.min(kelembapan, 100) / 100)));
+    document.getElementById('gauge-hum-circle').setAttribute('stroke-dashoffset',   Math.round(circumf * (1 - Math.min(kelembapan, 100) / 100)));
     document.getElementById('gauge-hum-text').textContent   = kelembapan + '%';
-    document.getElementById('gauge-soil-circle').setAttribute('stroke-dashoffset', Math.round(circumf * (1 - Math.min(soil, 100) / 100)));
+    document.getElementById('gauge-soil-circle').setAttribute('stroke-dashoffset',  Math.round(circumf * (1 - Math.min(soil, 100) / 100)));
     document.getElementById('gauge-soil-text').textContent  = soil + '%';
 
     const bs = document.getElementById('badge-suhu');
@@ -762,7 +865,7 @@
     else                 { bso.className = 'badge-info';   bso.textContent = 'BASAH'; }
   });
 
-  // ===== HAPUS DATA RENTANG =====
+  // ===================== HAPUS DATA RENTANG =====================
   window.hapusData = async function() {
     const dari   = document.getElementById('hapus-dari').value;
     const sampai = document.getElementById('hapus-sampai').value;
@@ -783,7 +886,6 @@
     closeModal('hapus-modal');
   };
 
-  // ===== HAPUS SEMUA DATA SENSOR =====
   window.hapusSemua = async function() {
     if (!confirm('⚠️ Yakin ingin menghapus SEMUA data riwayat sensor?')) return;
     await remove(ref(db, '/sensor/history'));
@@ -791,14 +893,13 @@
     closeModal('hapus-modal');
   };
 
-  // ===== HAPUS SEMUA FOTO =====
   window.hapusFoto = async function() {
     await remove(ref(db, '/foto'));
     alert('✅ Semua riwayat foto berhasil dihapus!');
     closeModal('hapus-foto-modal');
   };
 
-  // ===== SENSOR HISTORY CHART & TABLE =====
+  // ===================== SENSOR HISTORY CHART & TABLE =====================
   let riwayatChart = null;
   onValue(ref(db, '/sensor/history'), (snapshot) => {
     const raw = snapshot.val();
@@ -809,9 +910,7 @@
     }
 
     const data = Object.values(raw).sort((a, b) => {
-      const tA = new Date(a.created_at || a.updated_at || 0);
-      const tB = new Date(b.created_at || b.updated_at || 0);
-      return tB - tA;
+      return new Date(b.created_at || b.updated_at || 0) - new Date(a.created_at || a.updated_at || 0);
     });
 
     let rows = '';
