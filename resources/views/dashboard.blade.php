@@ -534,7 +534,7 @@
   function startStream() {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     setStreamState('connecting');
-    mainImg.src = ESP32_STREAM + '/?' + Date.now();
+    mainImg.src = ESP32_STREAM + '&' + Date.now();
   }
   mainImg.onload  = function() {
     setStreamState('live');
