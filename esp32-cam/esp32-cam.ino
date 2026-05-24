@@ -44,7 +44,7 @@ const int TOTAL_JADWAL = 3;
 IPAddress local_IP(192, 168, 1, 100);
 IPAddress gateway(192, 168, 1, 1);
 IPAddress subnet(255, 255, 255, 0);
-IPAddress dns(8, 8, 8, 8);
+IPAddress dns(1, 1, 1, 1);
 
 // ===================== PIN KAMERA (AI Thinker) =====================
 #define PWDN_GPIO_NUM     32
@@ -249,7 +249,7 @@ void startCameraServer() {
 
 // ===================== NTP & WAKTU =====================
 void syncNTP() {
-  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
   Serial.print("Sync NTP");
   struct tm ti;
   unsigned long s = millis();
