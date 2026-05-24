@@ -468,9 +468,7 @@
 <script>
   // ===================== KONFIGURASI =====================
   // Stream via VPS proxy (multi-device support)
-  const ESP32_STREAM  = 'http://43.134.230.63:8080/stream?token=melon-cam-2024';
-  // Capture masih lokal (ESP32:81) — hanya di jaringan lokal
-  const ESP32_CAPTURE = 'http://10.18.186.172:81/capture';
+  const ESP32_STREAM = 'http://43.134.230.63:8080/stream?token=melon-cam-2024';
 
   // ===================== CLOCK =====================
   function tick() { document.getElementById('clock').textContent = new Date().toLocaleTimeString('id-ID'); }
@@ -591,72 +589,27 @@
   });
 
   // ===================== AMBIL FOTO MANUAL =====================
-  // Fetch JPEG dari ESP32 port 81, tambahkan watermark via Canvas, simpan ke Firebase
+  // Set Firebase flag → ESP32 baca flag → capture + watermark + upload
   window.ambilFotoManual = async function() {
     const btn = document.getElementById('btn-capture');
     btn.disabled = true;
-    btn.textContent = '⏳ Mengambil...';
-    showToast('📷 Mengambil foto dari kamera...');
+    btn.textContent = '⏳ Menunggu ESP32...';
+    showToast('📷 Mengirim perintah ke ESP32...');
 
     try {
-      // 1. Fetch JPEG dari endpoint /capture (port 81)
-      const response = await fetch(ESP32_CAPTURE + '?' + Date.now(), {
-        method: 'GET',
-        cache: 'no-store'
-      });
-
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-
-      const blob = await response.blob();
-      if (blob.size < 1000) throw new Error('Foto terlalu kecil (' + blob.size + ' bytes), kemungkinan corrupt');
-
-      // 2. Load ke Image untuk canvas
-      const imgEl = new Image();
-      const blobUrl = URL.createObjectURL(blob);
-
-      await new Promise((resolve, reject) => {
-        imgEl.onload = resolve;
-        imgEl.onerror = () => reject(new Error('Gagal load gambar'));
-        imgEl.src = blobUrl;
-      });
-
-      // 3. Gambar ke canvas + tambahkan watermark timestamp
-      const canvas  = document.createElement('canvas');
-      canvas.width  = imgEl.naturalWidth;
-      canvas.height = imgEl.naturalHeight;
-      const ctx = canvas.getContext('2d');
-
-      ctx.drawImage(imgEl, 0, 0);
-      URL.revokeObjectURL(blobUrl);
-
-      // Watermark: background semi-transparan di bawah
-      const waktu = new Date().toLocaleString('id-ID', {
-        day:'2-digit', month:'2-digit', year:'numeric',
-        hour:'2-digit', minute:'2-digit', second:'2-digit'
-      });
-      const textY = canvas.height - 8;
-      ctx.font      = 'bold 11px monospace';
-      const textW   = ctx.measureText(waktu).width;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(4, textY - 13, textW + 8, 17);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(waktu, 8, textY);
-
-      // 4. Export canvas ke base64 JPEG
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      const b64     = dataUrl.split(',')[1];
-
-      if (!b64 || b64.length < 1000) throw new Error('Base64 hasil canvas tidak valid');
-
-      // 5. Simpan ke Firebase (dilakukan di bagian module di bawah)
-      const ts = Date.now();
-      window._pendingFoto = { image: b64, timestamp: ts, waktu: waktu };
-      document.dispatchEvent(new CustomEvent('simpanFoto'));
-
+      // Set flag di Firebase
+      await set(ref(db, '/capture'), true);
+      showToast('✅ Perintah terkirim! ESP32 akan ambil foto dalam beberapa detik...', 5000);
+      
+      // Tunggu foto baru muncul (listener /foto akan update otomatis)
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = '📸 Ambil Foto';
+      }, 15000); // Wait 15s for ESP32 to capture + upload
+      
     } catch (err) {
       console.error('Capture error:', err);
       showToast('❌ Gagal: ' + err.message, 4000);
-    } finally {
       btn.disabled = false;
       btn.textContent = '📸 Ambil Foto';
     }
